@@ -1,27 +1,50 @@
 # Use Sagemaker PyTorch container as base image
-# https://github.com/aws/deep-learning-containers/blob/master/pytorch/training/docker/1.6.0/py3/cu101/Dockerfile.gpu
-FROM 763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-training:1.6.0-gpu-py36-cu110-ubuntu18.04-v3.0
-LABEL author="vadimd@amazon.com"
+FROM 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-training:1.13.1-gpu-py39-cu117-ubuntu20.04-sagemaker
+LABEL author="sagemaker-mmdetection"
 
 ############# Installing MMDetection and its dependencies ############
 
 WORKDIR /opt/ml/code
-# updating torch and its dependecies to make it compatible with latest mmdetection & mmcv
-RUN pip install --upgrade --force-reinstall  torch torchvision cython
-RUN pip install mmcv-full==1.2.5 -f https://download.openmmlab.com/mmcv/dist/cu110/torch1.7.0/index.html
 
-RUN git clone https://github.com/open-mmlab/mmdetection
-RUN cd mmdetection/ && \
-    pip install -e .
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    wget \
+    unzip \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+RUN pip install --upgrade pip setuptools wheel
+RUN pip install cython numpy
+
+# Install MMEngine, MMCV, and MMDetection
+RUN pip install openmim
+RUN mim install mmengine
+RUN mim install "mmcv>=2.0.0"
+RUN mim install "mmdet>=3.0.0"
+
+# Install additional dependencies for data handling
+RUN pip install pycocotools opencv-python-headless pillow matplotlib seaborn
+RUN pip install albumentations imgaug
+
+# Clone MMDetection for configs and tools
+RUN git clone https://github.com/open-mmlab/mmdetection.git /opt/ml/code/mmdetection
 
 # to address https://github.com/pytorch/pytorch/issues/37377
-ENV MKL_THREADING_LAYER GNU
-ENV MMDETECTION /opt/ml/code/mmdetection
+ENV MKL_THREADING_LAYER=GNU
+ENV MMDETECTION=/opt/ml/code/mmdetection
+ENV PYTHONPATH="${PYTHONPATH}:/opt/ml/code/mmdetection"
 
 ############# Configuring Sagemaker ##############
 COPY container_training /opt/ml/code
 
-ENV SAGEMAKER_SUBMIT_DIRECTORY /opt/ml/code
-ENV SAGEMAKER_PROGRAM mmdetection_train.py
+ENV SAGEMAKER_SUBMIT_DIRECTORY=/opt/ml/code
+ENV SAGEMAKER_PROGRAM=mmdetection_train.py
 
-WORKDIR /
+WORKDIR /opt/ml/code
